@@ -16,6 +16,8 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+      - name: Enum lists match the generated client
+        run: go run ./internal/genenums && git diff --exit-code -- enums.gen.go
   # Separate from test, which runs on the oldest Go this module supports: govulncheck needs a
   # newer one, and consumers build with their own toolchain anyway.
   govulncheck:
