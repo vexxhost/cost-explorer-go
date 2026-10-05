@@ -16,4 +16,13 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+  # Separate from test, which runs on the oldest Go this module supports: govulncheck needs a
+  # newer one, and consumers build with their own toolchain anyway.
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
+        with:
+          go-version: stable
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -test ./...
