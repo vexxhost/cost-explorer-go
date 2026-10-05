@@ -49,6 +49,10 @@ Optional lists are pointers: nil is left out and imposes no restriction, while a
 empty list is sent as `[]` and keeps its meaning, a filter that matches nothing or a `group_by`
 that asks for totals. Amounts are decimal strings.
 
+Every enum has a `<Type>Values()` function listing what the schema accepts, such as
+`FilterServicesValues()`. Validate against it, or declare it in your own schema, instead of
+copying the values: a value cost-explorer adds then arrives with the next client release.
+
 ## Regenerating
 
 `costexplorer.gen.go` is generated and committed; the schema is not. `SpecVersion` names the
@@ -59,8 +63,9 @@ make generate SPEC_URL=https://cost-explorer.example.com/openapi-3.0.yaml
 ```
 
 The `regenerate` workflow does this daily against the repository variable `SPEC_URL` and opens a
-pull request when the served schema changed. Everything outside `*.gen.go` is hand-written:
-`gophercloud.go` and its tests.
+pull request when the served schema changed. `make generate` also writes `enums.gen.go` with
+`go run ./internal/genenums`, which reads `costexplorer.gen.go`. Everything else outside
+`*.gen.go` is hand-written: `gophercloud.go`, the generator, and their tests.
 
 ## License
 
