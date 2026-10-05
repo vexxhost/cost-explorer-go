@@ -1,9 +1,9 @@
 # cost-explorer-go
 
-Go types and a [gophercloud](https://github.com/gophercloud/gophercloud) client for the
-[cost-explorer](https://github.com/vexxhost/cost-explorer) v1 API: `POST /v1/cost_reports` and
-`POST /v1/cost_forecasts`, answered by a regional deployment or by the aggregator that covers every
-region.
+A Go client for the [cost-explorer](https://github.com/vexxhost/cost-explorer) v1 API, generated
+with [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) from the schema cost-explorer
+serves at `/openapi-3.0.yaml`, and authenticated through
+[gophercloud](https://github.com/gophercloud/gophercloud).
 
 ```sh
 go get github.com/vexxhost/cost-explorer-go@latest
@@ -12,51 +12,55 @@ go get github.com/vexxhost/cost-explorer-go@latest
 ```go
 import (
 	"github.com/gophercloud/gophercloud/v2"
-	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/utils/v2/openstack/clientconfig"
 
 	costexplorer "github.com/vexxhost/cost-explorer-go"
-	"github.com/vexxhost/cost-explorer-go/apiv1"
-	"github.com/vexxhost/cost-explorer-go/costreports"
 )
 
-provider, err := openstack.NewClient(keystoneURL)
-provider.HTTPClient = http.Client{CheckRedirect: costexplorer.NoRedirects}
-provider.RetryFunc = costexplorer.Retry(3)
-err = openstack.Authenticate(ctx, provider, gophercloud.AuthOptions{
-	IdentityEndpoint:            keystoneURL,
-	ApplicationCredentialID:     id,
-	ApplicationCredentialSecret: secret,
-	AllowReauth:                 true,
+// Credentials from clouds.yaml or OS_* variables, as the openstack CLI reads them.
+provider, err := clientconfig.AuthenticatedClient(ctx, &clientconfig.ClientOpts{Cloud: "mycloud"})
+
+client, err := costexplorer.New(provider, costexplorer.Options{
+	EndpointOpts: gophercloud.EndpointOpts{Region: "ca-east-1"}, // found in the catalog
+	Retries:      2,
 })
 
-client := costexplorer.NewServiceClient(provider, "https://cost-explorer.example.com")
-report, err := costreports.Create(ctx, client, apiv1.Request{
-	TimePeriod:  apiv1.TimePeriod{Start: start, End: end},
-	Granularity: "monthly",
-	Metrics:     []string{"cost"},
-	GroupBy:     []string{}, // totals only
-	Filter:      apiv1.Filter{ProjectIDs: []string{projectID}},
+out, err := client.CreateCostReportWithResponse(ctx, costexplorer.Request{
+	TimePeriod:  costexplorer.TimePeriod{Start: start, End: end},
+	Granularity: costexplorer.RequestGranularityMonthly,
+	Metrics:     &[]costexplorer.RequestMetrics{costexplorer.RequestMetricsCost},
+	GroupBy:     &[]costexplorer.RequestGroupBy{}, // totals only
+	Filter:      &costexplorer.Filter{ProjectIds: &[]string{projectID}},
 })
+if err == nil {
+	err = costexplorer.Problem(out.HTTPResponse, out.Body) // nil for a 200
+}
+report := out.JSON200
 ```
 
-| package | what it is |
-| --- | --- |
-| `apiv1` | The wire format. cost-explorer's own server uses these types, so the two cannot drift. It imports only the standard library. |
-| `costreports`, `costforecasts` | `Create` for each endpoint. An answer other than 200 is a `*costexplorer.StatusError` carrying the problem detail. |
-| `costexplorer` | `NewServiceClient`, the `Retry` policy and `NoRedirects`. |
+`New` finds the `cost-explorer` endpoint in the provider's service catalog, or uses
+`Options.Endpoint`. Each request carries the provider's token. With `AllowReauth` on the provider,
+a token Keystone revokes before it expires is replaced and the request repeated. `Retries` repeats
+a request after a connection failure, 408, 429 or a 5xx other than 501, with jittered backoff that
+honours `Retry-After`. Redirects are never followed, because Go would forward `X-Auth-Token` to the
+redirect's target.
 
-Authentication and re-authentication are gophercloud's: with `AllowReauth`, a token Keystone revokes
-before it expires is replaced and the request repeated. `Retry(n)` is a gophercloud `RetryFunc` that
-repeats a request up to `n` times on a connection failure, 408, 429 or a 5xx other than 501, with
-jittered exponential backoff that honours `Retry-After`; refusals such as 400 and 403 fail at once.
-Leave `RetryFunc` unset to fail fast, as the aggregator does when it forwards a caller's token.
+Optional lists are pointers: nil is left out and imposes no restriction, while a pointer to an
+empty list is sent as `[]` and keeps its meaning, a filter that matches nothing or a `group_by`
+that asks for totals. Amounts are decimal strings.
 
-Set `NoRedirects` on the provider's HTTP client. Requests carry the token in `X-Auth-Token`, which Go
-forwards to a redirect's target.
+## Regenerating
 
-Amounts are decimal strings. Optional lists are tagged `omitzero`: a nil list imposes no restriction
-and is left out, and an explicitly empty one is sent as `[]` and keeps its meaning, a filter that
-matches nothing or a `group_by` that asks for totals.
+`costexplorer.gen.go` is generated and committed; the schema is not. `SpecVersion` names the
+cost-explorer build it came from.
+
+```sh
+make generate SPEC_URL=https://cost-explorer.example.com/openapi-3.0.yaml
+```
+
+The `regenerate` workflow does this daily against the repository variable `SPEC_URL` and opens a
+pull request when the served schema changed. Everything outside `*.gen.go` is hand-written:
+`gophercloud.go` and its tests.
 
 ## License
 

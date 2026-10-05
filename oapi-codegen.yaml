@@ -1,0 +1,7 @@
+# Generates costexplorer.gen.go from the schema a cost-explorer deployment serves at
+# /openapi-3.0.yaml. Run `make generate SPEC_URL=https://<cost-explorer>/openapi-3.0.yaml`.
+package: costexplorer
+output: costexplorer.gen.go
+generate:
+  models: true
+  client: true

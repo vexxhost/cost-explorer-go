@@ -1,0 +1,30 @@
+# Regenerates the client from the schema the reference cost-explorer deployment serves, and
+# opens a pull request when it changed. Set the repository variable SPEC_URL to that
+# deployment's /openapi-3.0.yaml; until then this does nothing.
+name: regenerate
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  regenerate:
+    if: vars.SPEC_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
+        with:
+          go-version: stable
+      - run: make generate SPEC_URL="${{ vars.SPEC_URL }}"
+      - run: go vet ./... && go test -race ./...
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: regenerate/schema
+          signoff: true
+          commit-message: Regenerate from the served cost-explorer schema
+          title: Regenerate from the served cost-explorer schema
+          body: |
+            `make generate SPEC_URL=${{ vars.SPEC_URL }}` changed the generated client. `SpecVersion` in `spec_version.gen.go` names the cost-explorer build it came from.
